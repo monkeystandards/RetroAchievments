@@ -1,0 +1,6 @@
+{
+  "name": "RetroTrack",
+  "description": "Android companion app for RetroAchievements. Track achievements, browse game sets, manage wanted lists, view profiles & followers, and message other players.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
