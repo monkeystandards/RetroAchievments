@@ -191,3 +191,10 @@ export interface ConversationSummary {
   unreadCount: number;
   userPic?: string;
 }
+
+export interface RetroAchievementWallComment {
+  user: string;
+  ulid: string;
+  submitted: string;
+  commentText: string;
+}

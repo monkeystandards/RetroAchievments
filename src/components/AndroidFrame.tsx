@@ -212,7 +212,7 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
             { id: 'games', label: 'Games', icon: Sparkles },
             { id: 'wanted', label: 'Wanted', icon: Trophy, isTarget: true },
             { id: 'community', label: 'Social', icon: Trophy, isSocial: true },
-            { id: 'messages', label: 'Chat', icon: Trophy, isChat: true },
+            { id: 'messages', label: 'Messages', icon: Trophy, isChat: true },
           ].map((item) => {
             const isActive = activeTab === item.id;
             return (

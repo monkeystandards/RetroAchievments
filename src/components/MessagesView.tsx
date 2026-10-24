@@ -1,23 +1,20 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  MessageSquare,
-  Send,
-  ArrowLeft,
-  Paperclip,
-  Trophy,
-  X,
-  ExternalLink,
-  Plus,
-  CheckCheck,
-  Globe,
-  Inbox,
   Mail,
-  Share2,
-  Sparkles,
+  ExternalLink,
+  RefreshCw,
+  Search,
+  User,
   ShieldCheck,
   SendHorizontal,
+  Inbox,
+  ArrowLeft,
+  Sparkles,
+  MessageCircle,
+  Clock,
+  CheckCircle2,
 } from 'lucide-react';
-import { ChatMessage, ConversationSummary, WantedItem } from '../types/retro';
+import { RetroAchievementWallComment, WantedItem } from '../types/retro';
 import { api, getUserAvatarUrl } from '../services/api';
 import { sounds } from '../utils/audio';
 
@@ -25,8 +22,8 @@ interface MessagesViewProps {
   activeRecipient: string | null;
   onSelectRecipient: (username: string | null) => void;
   onOpenUserProfile: (username: string) => void;
-  onNavigateToGame: (gameId: number) => void;
-  wantedList: WantedItem[];
+  onNavigateToGame?: (gameId: number) => void;
+  wantedList?: WantedItem[];
   currentUser: string;
 }
 
@@ -34,611 +31,159 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
   activeRecipient,
   onSelectRecipient,
   onOpenUserProfile,
-  onNavigateToGame,
-  wantedList,
   currentUser,
 }) => {
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState<string>('');
-  const [selectedAttachment, setSelectedAttachment] = useState<ChatMessage['attachment'] | null>(null);
-  const [showAttachmentPicker, setShowAttachmentPicker] = useState<boolean>(false);
-  const [loadingThread, setLoadingThread] = useState<boolean>(false);
-  const [showNewChatModal, setShowNewChatModal] = useState<boolean>(false);
-  const [newChatUser, setNewChatUser] = useState<string>('');
-  
-  // Tab within active conversation: 'chat' | 'wall'
-  const [threadTab, setThreadTab] = useState<'chat' | 'wall'>('chat');
-  const [wallComments, setWallComments] = useState<any[]>([]);
-  const [loadingWall, setLoadingWall] = useState<boolean>(false);
+  // Target user whose website messages we are displaying (defaults to current user or active recipient)
+  const [selectedUser, setSelectedUser] = useState<string>(activeRecipient || currentUser || 'Scott');
+  const [wallComments, setWallComments] = useState<RetroAchievementWallComment[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [quickFollowed, setQuickFollowed] = useState<string[]>([]);
 
-  // Main hub filter: 'all' | 'direct' | 'wall'
-  const [mainFilter, setMainFilter] = useState<'all' | 'direct' | 'wall'>('all');
-  const [wallSearchUser, setWallSearchUser] = useState<string>('');
-  const [searchedWallComments, setSearchedWallComments] = useState<any[] | null>(null);
-  const [searchingWall, setSearchingWall] = useState<boolean>(false);
+  // Keep selectedUser in sync when activeRecipient prop changes from outside (e.g. profile or community)
+  useEffect(() => {
+    if (activeRecipient) {
+      setSelectedUser(activeRecipient);
+    }
+  }, [activeRecipient]);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastMessageCountRef = useRef<number>(0);
-
-  // Load conversations list
-  const loadConversations = useCallback(() => {
+  // Load followed users for quick filter pills
+  useEffect(() => {
     api
-      .getConversations()
-      .then((data) => setConversations(data))
-      .catch((err) => console.error('Failed to load conversations:', err));
+      .getFollowing()
+      .then((users) => {
+        if (users && users.length > 0) {
+          setQuickFollowed(users.map((u) => u.user).slice(0, 6));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch real messages sent via the RetroAchievements website for the selected user
+  const loadWebsiteMessages = useCallback(async (target: string) => {
+    if (!target.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const comments = await api.getWallComments(target.trim());
+      // Sort newest first
+      const sorted = [...comments].sort((a, b) => {
+        const timeA = new Date(a.submitted).getTime();
+        const timeB = new Date(b.submitted).getTime();
+        return timeB - timeA;
+      });
+      setWallComments(sorted);
+    } catch (err: any) {
+      console.error('Failed to load RetroAchievements website messages:', err);
+      setError(err.message || 'Failed to fetch messages from RetroAchievements.org');
+      setWallComments([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    loadConversations();
-    const interval = setInterval(loadConversations, 5000);
-    return () => clearInterval(interval);
-  }, [loadConversations]);
+    loadWebsiteMessages(selectedUser);
+  }, [selectedUser, loadWebsiteMessages]);
 
-  // Load and poll live thread messages
-  useEffect(() => {
-    if (!activeRecipient) {
-      loadConversations();
-      return;
-    }
+  const handleManualRefresh = () => {
+    sounds.playTap();
+    loadWebsiteMessages(selectedUser);
+  };
 
-    let isSubscribed = true;
-    setLoadingThread(true);
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    sounds.playTap();
+    const query = searchQuery.trim();
+    setSelectedUser(query);
+    onSelectRecipient(query.toLowerCase() === currentUser.toLowerCase() ? null : query);
+  };
 
-    const fetchThread = () => {
-      api
-        .getThread(activeRecipient)
-        .then((msgs) => {
-          if (!isSubscribed) return;
-
-          if (
-            lastMessageCountRef.current > 0 &&
-            msgs.length > lastMessageCountRef.current &&
-            msgs[msgs.length - 1].sender.toLowerCase() !== currentUser.toLowerCase()
-          ) {
-            sounds.playMessageReceived();
-          }
-
-          lastMessageCountRef.current = msgs.length;
-          setThreadMessages(msgs);
-          setLoadingThread(false);
-          api.markThreadRead(activeRecipient);
-        })
-        .catch((err) => {
-          console.error('Failed to load thread:', err);
-          if (isSubscribed) setLoadingThread(false);
-        });
-    };
-
-    fetchThread();
-    const pollInterval = setInterval(fetchThread, 2500);
-
-    return () => {
-      isSubscribed = false;
-      clearInterval(pollInterval);
-    };
-  }, [activeRecipient, currentUser, loadConversations]);
-
-  // Fetch wall comments when switching to wall tab
-  useEffect(() => {
-    if (activeRecipient && threadTab === 'wall') {
-      setLoadingWall(true);
-      api
-        .getWallComments(activeRecipient)
-        .then((data) => {
-          setWallComments(data || []);
-          setLoadingWall(false);
-        })
-        .catch((err) => {
-          console.error('Failed to load wall comments:', err);
-          setLoadingWall(false);
-        });
-    }
-  }, [activeRecipient, threadTab]);
-
-  // Scroll to bottom when thread updates
-  useEffect(() => {
-    if (activeRecipient && threadTab === 'chat') {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [threadMessages, activeRecipient, threadTab]);
-
-  // Send message
-  const handleSendMessage = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!activeRecipient || (!inputText.trim() && !selectedAttachment)) return;
-
-    const textToSend = inputText.trim() || (selectedAttachment ? `Check out this achievement: ${selectedAttachment.title}!` : '');
-    const attachmentToSend = selectedAttachment || undefined;
-
-    const tempMsg: ChatMessage = {
-      id: `temp-${Date.now()}`,
-      sender: currentUser,
-      recipient: activeRecipient,
-      text: textToSend,
-      timestamp: new Date().toISOString(),
-      read: false,
-      attachment: attachmentToSend,
-    };
-
-    setThreadMessages((prev) => [...prev, tempMsg]);
-    setInputText('');
-    setSelectedAttachment(null);
-    setShowAttachmentPicker(false);
-    sounds.playMessageSent();
-
+  const formatTimestamp = (dateStr: string): { relative: string; formatted: string } => {
     try {
-      const saved = await api.sendMessage({
-        recipient: activeRecipient,
-        text: textToSend,
-        attachment: attachmentToSend,
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return { relative: dateStr, formatted: dateStr };
+
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffSecs = Math.floor(diffMs / 1000);
+      const diffMins = Math.floor(diffSecs / 60);
+      const diffHours = Math.floor(diffMins / 60);
+      const diffDays = Math.floor(diffHours / 24);
+
+      let relative = '';
+      if (diffDays > 30) {
+        relative = date.toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+        });
+      } else if (diffDays > 0) {
+        relative = `${diffDays}d ago`;
+      } else if (diffHours > 0) {
+        relative = `${diffHours}h ago`;
+      } else if (diffMins > 0) {
+        relative = `${diffMins}m ago`;
+      } else {
+        relative = 'Just now';
+      }
+
+      const formatted = date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
       });
 
-      setThreadMessages((prev) => prev.map((m) => (m.id === tempMsg.id ? saved : m)));
-      lastMessageCountRef.current = threadMessages.length + 1;
-      loadConversations();
-    } catch (err) {
-      console.error('Failed to send message:', err);
+      return { relative, formatted };
+    } catch {
+      return { relative: dateStr, formatted: dateStr };
     }
   };
 
-  const handleStartNewChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newChatUser.trim()) return;
-    const target = newChatUser.trim();
-    setNewChatUser('');
-    setShowNewChatModal(false);
-    onSelectRecipient(target);
-  };
+  const isViewingSelf = selectedUser.toLowerCase() === currentUser.toLowerCase();
 
-  // Search public wall comments
-  const handleSearchWall = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wallSearchUser.trim()) return;
-    setSearchingWall(true);
-    try {
-      const data = await api.getWallComments(wallSearchUser.trim());
-      setSearchedWallComments(data || []);
-    } catch (err) {
-      console.error('Failed to search wall comments:', err);
-      setSearchedWallComments([]);
-    } finally {
-      setSearchingWall(false);
-    }
-  };
-
-  // Build official RetroAchievements URL to dispatch official site PM
-  const getOfficialRAPMUrl = (recipient: string, messageBody?: string) => {
-    const subject = `Message from ${currentUser} (RetroTrack)`;
-    const body = messageBody || `Hi ${recipient}, messaging you from RetroTrack!`;
-    return `https://retroachievements.org/createmessage.php?t=${encodeURIComponent(
-      recipient
-    )}&s=${encodeURIComponent(subject)}&b=${encodeURIComponent(body)}`;
-  };
-
-  // If a conversation is active, render the Chat Thread View
-  if (activeRecipient) {
-    return (
-      <div className="flex flex-col h-full bg-slate-950">
-        {/* Thread Header */}
-        <div className="h-14 px-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between z-10 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <button
-              onClick={() => {
-                sounds.playTap();
-                onSelectRecipient(null);
-              }}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-
-            <img
-              src={getUserAvatarUrl(undefined, activeRecipient)}
-              alt={activeRecipient}
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src =
-                  'https://media.retroachievements.org/UserPic/Scott.png';
-              }}
-              className="w-8 h-8 rounded-full object-cover ring-1 ring-amber-500/50 bg-slate-800 shrink-0"
-            />
-
-            <div className="min-w-0">
-              <h3 className="text-xs font-bold text-white truncate">{activeRecipient}</h3>
-              <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>RetroAchievements Member</span>
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Direct Official RA Website PM link */}
-            <a
-              href={getOfficialRAPMUrl(activeRecipient, inputText)}
-              target="_blank"
-              rel="noreferrer"
-              title="Open Official RetroAchievements.org PM Portal"
-              className="flex items-center gap-1 text-[11px] font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 px-2.5 py-1 rounded-lg transition-colors shadow-sm"
-            >
-              <Mail className="w-3 h-3" />
-              <span>Official RA PM</span>
-              <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
-            </a>
-
-            <button
-              onClick={() => {
-                sounds.playTap();
-                onOpenUserProfile(activeRecipient);
-              }}
-              className="text-[11px] font-semibold text-slate-300 hover:text-white px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
-            >
-              Profile
-            </button>
-          </div>
-        </div>
-
-        {/* Tab Selector: In-App Direct Messages vs Real RA Wall Messages */}
-        <div className="flex border-b border-slate-800 bg-slate-900/60 p-1 shrink-0">
-          <button
-            onClick={() => {
-              sounds.playTap();
-              setThreadTab('chat');
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-              threadTab === 'chat'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <MessageSquare className="w-3 h-3" />
-            <span>Direct Chat ({threadMessages.length})</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sounds.playTap();
-              setThreadTab('wall');
-            }}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-              threadTab === 'wall'
-                ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Globe className="w-3 h-3" />
-            <span>RA Public Wall Comments</span>
-          </button>
-        </div>
-
-        {/* TAB 1: Real In-App Direct Messages */}
-        {threadTab === 'chat' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {/* RetroAchievements Official PM Banner */}
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-2.5 flex items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2 min-w-0">
-                <Globe className="w-4 h-4 text-amber-400 shrink-0" />
-                <span className="text-[11px] text-amber-200/90 truncate">
-                  Send to <strong>{activeRecipient}</strong>'s official inbox on retroachievements.org
-                </span>
-              </div>
-              <a
-                href={getOfficialRAPMUrl(activeRecipient, inputText)}
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 text-[10px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors"
-              >
-                <span>Send PM</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            </div>
-
-            {loadingThread ? (
-              <div className="space-y-3 animate-pulse p-4">
-                <div className="h-12 w-3/4 bg-slate-800/40 rounded-2xl ml-auto" />
-                <div className="h-16 w-3/4 bg-slate-800/40 rounded-2xl" />
-                <div className="h-12 w-1/2 bg-slate-800/40 rounded-2xl ml-auto" />
-              </div>
-            ) : threadMessages.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 space-y-2">
-                <MessageSquare className="w-8 h-8 mx-auto text-slate-600" />
-                <p className="text-xs">No direct messages yet with {activeRecipient}.</p>
-                <p className="text-[11px] text-slate-600">
-                  Send a message below or tap "Official RA PM" to write to their RetroAchievements inbox!
-                </p>
-              </div>
-            ) : (
-              threadMessages.map((msg) => {
-                const isMe = msg.sender.toLowerCase() === currentUser.toLowerCase();
-
-                return (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] ${
-                      isMe ? 'ml-auto' : 'mr-auto'
-                    }`}
-                  >
-                    <div
-                      className={`rounded-2xl p-3 shadow-sm ${
-                        isMe
-                          ? 'bg-gradient-to-r from-amber-600 to-amber-500 text-slate-950 font-medium'
-                          : 'bg-slate-900 border border-slate-800 text-slate-100'
-                      }`}
-                    >
-                      {/* Attached Achievement Card */}
-                      {msg.attachment && (
-                        <div
-                          className={`mb-2 p-2 rounded-xl border flex items-center gap-2.5 ${
-                            isMe ? 'bg-amber-950/20 border-amber-900/40' : 'bg-slate-950 border-slate-800'
-                          }`}
-                        >
-                          {msg.attachment.badgeUrl && (
-                            <img
-                              src={msg.attachment.badgeUrl}
-                              alt={msg.attachment.title}
-                              className="w-10 h-10 rounded-lg pixelated bg-slate-950 p-0.5 border border-amber-500/50 shrink-0"
-                            />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[10px] uppercase font-bold text-amber-300">
-                              Achievement Shared
-                            </div>
-                            <div className="text-xs font-bold truncate text-white">
-                              {msg.attachment.title}
-                            </div>
-                            {msg.attachment.subtitle && (
-                              <div className="text-[10px] text-slate-300 truncate">
-                                {msg.attachment.subtitle}
-                              </div>
-                            )}
-                            {msg.attachment.points !== undefined && (
-                              <div className="text-[10px] font-mono font-bold text-amber-300 mt-0.5">
-                                +{msg.attachment.points} pts
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      <p className="text-xs leading-relaxed break-words">{msg.text}</p>
-                    </div>
-
-                    <div className="flex items-center gap-1 mt-1 px-1 text-[10px] text-slate-500 font-mono">
-                      <span>
-                        {new Date(msg.timestamp).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                      {isMe && <CheckCheck className="w-3 h-3 text-amber-400" />}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-
-        {/* TAB 2: Real RetroAchievements User Wall Comments */}
-        {threadTab === 'wall' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            <div className="flex items-center justify-between bg-slate-900 border border-slate-800 p-2.5 rounded-2xl text-xs">
-              <span className="text-[11px] text-slate-300">
-                Official User Wall on <strong>retroachievements.org</strong>
-              </span>
-              <a
-                href={`https://retroachievements.org/user/${activeRecipient}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[10px] text-amber-400 hover:underline flex items-center gap-1 font-semibold"
-              >
-                <span>Leave a Wall Post</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            </div>
-
-            {loadingWall ? (
-              <div className="space-y-3 animate-pulse p-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-16 bg-slate-900/60 rounded-2xl" />
-                ))}
-              </div>
-            ) : wallComments.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 space-y-2">
-                <Globe className="w-8 h-8 mx-auto text-slate-600" />
-                <p className="text-xs">No public wall comments found for {activeRecipient}.</p>
-              </div>
-            ) : (
-              wallComments.map((c: any, idx: number) => (
-                <div
-                  key={c.id || idx}
-                  className="bg-slate-900/90 border border-slate-800/80 rounded-2xl p-3 space-y-1.5"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <img
-                        src={getUserAvatarUrl(undefined, c.user)}
-                        alt={c.user}
-                        referrerPolicy="no-referrer"
-                        className="w-6 h-6 rounded-lg object-cover ring-1 ring-slate-700 bg-slate-800 shrink-0"
-                      />
-                      <span className="text-xs font-bold text-amber-300 truncate">{c.user}</span>
-                    </div>
-                    {c.submitted && (
-                      <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                        {new Date(c.submitted).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
-                    {c.commentText}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {/* Selected Attachment Preview Box */}
-        {selectedAttachment && (
-          <div className="px-3 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              {selectedAttachment.badgeUrl && (
-                <img
-                  src={selectedAttachment.badgeUrl}
-                  alt={selectedAttachment.title}
-                  className="w-7 h-7 rounded-md pixelated bg-slate-950 p-0.5 border border-amber-400"
-                />
-              )}
-              <div className="text-xs text-slate-200 truncate">
-                <span className="text-amber-400 font-semibold mr-1">Attachment:</span>
-                {selectedAttachment.title}
-              </div>
-            </div>
-            <button
-              onClick={() => setSelectedAttachment(null)}
-              className="text-slate-400 hover:text-white p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Attachment Picker Drawer */}
-        {showAttachmentPicker && (
-          <div className="p-3 bg-slate-900 border-t border-slate-800 max-h-48 overflow-y-auto space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-              <span>Attach Trophy from Wanted List</span>
-              <button onClick={() => setShowAttachmentPicker(false)} className="text-slate-500 hover:text-white">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            {wantedList.length === 0 ? (
-              <p className="text-[11px] text-slate-500">No achievements in your wanted list yet.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {wantedList.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setSelectedAttachment({
-                        type: 'achievement',
-                        id: item.achievementId,
-                        title: item.achievementTitle,
-                        subtitle: item.gameTitle,
-                        badgeUrl: `https://media.retroachievements.org/Badge/${item.badgeName}.png`,
-                        points: item.points,
-                      });
-                      setShowAttachmentPicker(false);
-                      sounds.playTap();
-                    }}
-                    className="w-full text-left p-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 flex items-center gap-2 text-xs"
-                  >
-                    <Trophy className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="truncate text-slate-200">{item.achievementTitle}</span>
-                    <span className="text-[10px] text-amber-400 font-mono ml-auto">
-                      +{item.points} pts
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Message Input Bar with Dual Action: In-App Send + Official RA PM */}
-        <div className="p-3 bg-slate-900 border-t border-slate-800 space-y-2 shrink-0">
-          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                sounds.playTap();
-                setShowAttachmentPicker(!showAttachmentPicker);
-              }}
-              title="Attach trophy to message"
-              className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 flex items-center justify-center shrink-0 active:scale-95 transition-all"
-            >
-              <Paperclip className="w-4 h-4" />
-            </button>
-
-            <input
-              type="text"
-              placeholder={`Message ${activeRecipient}...`}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
-            />
-
-            <button
-              type="submit"
-              disabled={!inputText.trim() && !selectedAttachment}
-              title="Send Direct Message"
-              className="w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:hover:bg-amber-500 text-slate-950 font-bold flex items-center justify-center shrink-0 active:scale-95 transition-all shadow-md"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
-
-          {/* Quick link to dispatch as Official RA PM */}
-          <div className="flex items-center justify-between px-1 text-[11px] text-slate-400">
-            <span>Also deliver to their site inbox:</span>
-            <a
-              href={getOfficialRAPMUrl(activeRecipient, inputText)}
-              target="_blank"
-              rel="noreferrer"
-              className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
-            >
-              <span>Dispatch on retroachievements.org</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Conversation List Screen / RetroAchievements Messaging Hub
   return (
-    <div className="p-4 space-y-4 pb-12">
-      {/* Official RetroAchievements Messaging Portal Card */}
-      <section className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border border-slate-800 rounded-3xl p-4 shadow-lg space-y-3">
-        <div className="flex items-center justify-between">
+    <div className="p-4 space-y-4 pb-16">
+      {/* Official RetroAchievements Website Messaging Hub Card */}
+      <section className="bg-gradient-to-br from-slate-900 via-slate-900 to-amber-950/40 border border-slate-800 rounded-3xl p-4 shadow-xl space-y-3 relative overflow-hidden">
+        {/* Subtle decorative glow */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+
+        <div className="flex items-center justify-between relative z-10">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
               <Mail className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-extrabold text-white">RetroAchievements Messaging</h2>
-              <p className="text-[11px] text-slate-400">Official inbox & player discussions</p>
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-sm font-extrabold text-white">RetroAchievements Messages</h2>
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
+              <p className="text-[11px] text-slate-400">Authentic messages from RetroAchievements.org</p>
             </div>
           </div>
 
           <a
             href="https://retroachievements.org/messages.php"
             target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-xl active:scale-95 transition-all shadow-sm shadow-amber-500/30"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-xl active:scale-95 transition-all shadow-md shadow-amber-500/20 shrink-0"
           >
             <Inbox className="w-3.5 h-3.5" />
-            <span>Open RA Inbox</span>
+            <span>Site Inbox</span>
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
 
-        {/* Quick Launch Shortcuts */}
-        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80">
+        {/* Website Action Shortcuts */}
+        <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800/80 relative z-10">
           <a
             href="https://retroachievements.org/messages.php"
             target="_blank"
-            rel="noreferrer"
-            className="p-2.5 bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/60 rounded-xl flex items-center justify-between text-xs transition-colors"
+            rel="noopener noreferrer"
+            className="p-2.5 bg-slate-950/80 hover:bg-slate-800 border border-slate-800/80 rounded-xl flex items-center justify-between text-xs transition-colors"
           >
             <span className="text-slate-300 font-semibold flex items-center gap-1.5">
               <Inbox className="w-3.5 h-3.5 text-amber-400" />
@@ -648,243 +193,323 @@ export const MessagesView: React.FC<MessagesViewProps> = ({
           </a>
 
           <a
-            href="https://retroachievements.org/createmessage.php"
+            href={
+              isViewingSelf
+                ? 'https://retroachievements.org/createmessage.php'
+                : `https://retroachievements.org/createmessage.php?t=${encodeURIComponent(selectedUser)}`
+            }
             target="_blank"
-            rel="noreferrer"
-            className="p-2.5 bg-slate-950/70 hover:bg-slate-800/80 border border-slate-800/60 rounded-xl flex items-center justify-between text-xs transition-colors"
+            rel="noopener noreferrer"
+            className="p-2.5 bg-slate-950/80 hover:bg-slate-800 border border-slate-800/80 rounded-xl flex items-center justify-between text-xs transition-colors"
           >
-            <span className="text-slate-300 font-semibold flex items-center gap-1.5">
-              <SendHorizontal className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Compose Site PM</span>
+            <span className="text-slate-300 font-semibold flex items-center gap-1.5 truncate">
+              <SendHorizontal className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="truncate">{isViewingSelf ? 'Compose Site PM' : `PM ${selectedUser}`}</span>
             </span>
-            <ExternalLink className="w-3 h-3 text-slate-500" />
+            <ExternalLink className="w-3 h-3 text-slate-500 shrink-0 ml-1" />
           </a>
+        </div>
+
+        {/* Verification banner: Zero automated responses guarantee */}
+        <div className="bg-slate-950/60 border border-slate-800/60 rounded-xl px-2.5 py-1.5 flex items-center gap-2 text-[10px] text-slate-400">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span>Only authentic messages sent via RetroAchievements.org • No automated responses</span>
         </div>
       </section>
 
-      {/* Hub Tabs */}
-      <div className="flex gap-1.5 bg-slate-900 p-1 rounded-2xl border border-slate-800">
-        <button
-          onClick={() => {
-            sounds.playTap();
-            setMainFilter('all');
-          }}
-          className={`flex-1 py-1.5 rounded-xl text-xs font-semibold text-center transition-all ${
-            mainFilter === 'all'
-              ? 'bg-amber-500 text-slate-950 shadow-sm font-bold'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          Active Chats ({conversations.length})
-        </button>
+      {/* Recipient / Player Selection Controls */}
+      <section className="space-y-2">
+        {/* Search bar to view any player's website messages */}
+        <form onSubmit={handleSearchSubmit} className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search any player's RA message wall (e.g. Scott)..."
+            className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-9 pr-20 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+          />
+          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          <button
+            type="submit"
+            disabled={!searchQuery.trim()}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 rounded-xl text-[11px] font-bold transition-colors"
+          >
+            Search
+          </button>
+        </form>
 
-        <button
-          onClick={() => {
-            sounds.playTap();
-            setMainFilter('wall');
-          }}
-          className={`flex-1 py-1.5 rounded-xl text-xs font-semibold text-center transition-all ${
-            mainFilter === 'wall'
-              ? 'bg-amber-500 text-slate-950 shadow-sm font-bold'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          Public RA Wall
-        </button>
-      </div>
+        {/* Quick Filter Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+          <button
+            onClick={() => {
+              sounds.playTap();
+              setSelectedUser(currentUser);
+              onSelectRecipient(null);
+              setSearchQuery('');
+            }}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 shrink-0 transition-all ${
+              isViewingSelf
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
+            }`}
+          >
+            <User className="w-3 h-3" />
+            <span>My Messages ({currentUser})</span>
+          </button>
 
-      {/* VIEW 1: Active Conversations List */}
-      {mainFilter !== 'wall' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-300">Player Direct Threads</span>
+          {quickFollowed.map((followedName) => {
+            const isSelected = selectedUser.toLowerCase() === followedName.toLowerCase();
+            return (
+              <button
+                key={followedName}
+                onClick={() => {
+                  sounds.playTap();
+                  setSelectedUser(followedName);
+                  onSelectRecipient(followedName);
+                  setSearchQuery('');
+                }}
+                className={`px-2.5 py-1.5 rounded-xl font-semibold flex items-center gap-1.5 shrink-0 transition-all ${
+                  isSelected
+                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <img
+                  src={getUserAvatarUrl(undefined, followedName)}
+                  alt={followedName}
+                  referrerPolicy="no-referrer"
+                  className="w-3.5 h-3.5 rounded-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src =
+                      'https://media.retroachievements.org/UserPic/Scott.png';
+                  }}
+                />
+                <span>{followedName}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Current Active Wall Header */}
+      <div className="flex items-center justify-between pt-1">
+        <div className="flex items-center gap-2 min-w-0">
+          {!isViewingSelf && (
             <button
               onClick={() => {
                 sounds.playTap();
-                setShowNewChatModal(true);
+                setSelectedUser(currentUser);
+                onSelectRecipient(null);
               }}
-              className="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-xl active:scale-95 transition-all shadow-sm shadow-indigo-600/30"
+              title="Return to My Messages"
+              className="w-7 h-7 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>New Message</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
             </button>
-          </div>
-
-          {/* New Chat Modal Popover */}
-          {showNewChatModal && (
-            <div className="p-3 bg-slate-900 border border-indigo-500/50 rounded-2xl space-y-2.5 shadow-xl animate-in fade-in duration-150">
-              <div className="flex items-center justify-between text-xs font-bold text-white">
-                <span>Message Any RetroAchievements Member</span>
-                <button onClick={() => setShowNewChatModal(false)} className="text-slate-400 hover:text-white">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <form onSubmit={handleStartNewChat} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Enter exact username (e.g. Sarconius, Scott)..."
-                  value={newChatUser}
-                  onChange={(e) => setNewChatUser(e.target.value)}
-                  className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                />
-                <button
-                  type="submit"
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition-colors"
-                >
-                  Start
-                </button>
-              </form>
-            </div>
           )}
 
-          {/* Conversations List */}
-          <div className="space-y-2">
-            {conversations.length === 0 ? (
-              <div className="p-8 text-center bg-slate-900/60 rounded-3xl border border-slate-800 text-slate-400 space-y-2">
-                <MessageSquare className="w-8 h-8 mx-auto text-slate-600" />
-                <p className="text-xs">No active chats yet.</p>
-                <p className="text-[11px] text-slate-500">
-                  Tap "New Message" or view the "Public RA Wall" tab to read community discussions!
-                </p>
-              </div>
-            ) : (
-              conversations.map((conv) => (
-                <button
-                  key={conv.user}
-                  onClick={() => {
-                    sounds.playTap();
-                    onSelectRecipient(conv.user);
-                  }}
-                  className="w-full bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-slate-700 p-3 rounded-2xl flex items-center gap-3 transition-all text-left active:scale-[0.99] group"
-                >
-                  <div className="relative shrink-0">
-                    <img
-                      src={getUserAvatarUrl(conv.userPic, conv.user)}
-                      alt={conv.user}
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          'https://media.retroachievements.org/UserPic/Scott.png';
-                      }}
-                      className="w-12 h-12 rounded-xl object-cover ring-1 ring-slate-700 bg-slate-800"
-                    />
-                    {conv.unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full flex items-center justify-center ring-2 ring-slate-900">
-                        {conv.unreadCount}
-                      </span>
-                    )}
-                  </div>
+          <img
+            src={getUserAvatarUrl(undefined, selectedUser)}
+            alt={selectedUser}
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src =
+                'https://media.retroachievements.org/UserPic/Scott.png';
+            }}
+            className="w-7 h-7 rounded-full object-cover ring-1 ring-amber-500/40 bg-slate-800 shrink-0"
+          />
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <h4 className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors truncate">
-                        {conv.user}
-                      </h4>
-                      <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                        {new Date(conv.lastMessage.timestamp).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-400 line-clamp-1 mt-0.5">
-                      {conv.lastMessage.attachment && (
-                        <span className="text-amber-400 font-semibold mr-1">[Trophy]</span>
-                      )}
-                      {conv.lastMessage.text}
-                    </p>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* VIEW 2: Public RA Wall Comments Search & Browser */}
-      {mainFilter === 'wall' && (
-        <div className="space-y-3">
-          <div className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 space-y-2">
-            <label className="text-xs font-bold text-slate-200">
-              Browse Any Player's Public Wall Comments
-            </label>
-            <form onSubmit={handleSearchWall} className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Enter username (e.g. Scott, Sarconius)..."
-                value={wallSearchUser}
-                onChange={(e) => setWallSearchUser(e.target.value)}
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
-              />
-              <button
-                type="submit"
-                disabled={searchingWall}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3.5 py-1.5 rounded-xl transition-colors disabled:opacity-50"
-              >
-                {searchingWall ? '...' : 'Load'}
-              </button>
-            </form>
-            <p className="text-[10px] text-slate-400">
-              Fetches live message wall comments directly from <strong>retroachievements.org</strong>.
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-xs font-bold text-white truncate">
+                {isViewingSelf ? 'My Message Wall' : `${selectedUser}'s Message Wall`}
+              </h3>
+              <span className="text-[10px] text-amber-400 font-mono">
+                ({wallComments.length} {wallComments.length === 1 ? 'message' : 'messages'})
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-400 truncate">
+              Messages received on RetroAchievements.org
             </p>
           </div>
+        </div>
 
-          {/* Wall Results */}
-          {searchedWallComments !== null && (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between text-xs text-slate-300 font-bold">
-                <span>Wall Comments for {wallSearchUser} ({searchedWallComments.length})</span>
-                <a
-                  href={`https://retroachievements.org/user/${wallSearchUser}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-amber-400 hover:underline flex items-center gap-1 text-[11px]"
-                >
-                  <span>Post on their wall</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={handleManualRefresh}
+            disabled={loading}
+            title="Refresh messages from RetroAchievements.org"
+            className="w-7 h-7 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-amber-400 active:scale-95 transition-all"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-amber-400' : ''}`} />
+          </button>
 
-              {searchedWallComments.length === 0 ? (
-                <div className="p-6 bg-slate-900/60 rounded-2xl border border-slate-800 text-center text-xs text-slate-400">
-                  No public wall comments found for {wallSearchUser}.
-                </div>
-              ) : (
-                searchedWallComments.map((c: any, idx: number) => (
-                  <div
-                    key={c.id || idx}
-                    className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <img
-                          src={getUserAvatarUrl(undefined, c.user)}
-                          alt={c.user}
-                          referrerPolicy="no-referrer"
-                          className="w-6 h-6 rounded-lg object-cover ring-1 ring-slate-700 bg-slate-800 shrink-0"
-                        />
-                        <span className="text-xs font-bold text-amber-300 truncate">{c.user}</span>
+          <a
+            href={`https://retroachievements.org/user/${encodeURIComponent(selectedUser)}#user-wall`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open message wall on RetroAchievements.org"
+            className="px-2 py-1 rounded-xl bg-slate-900 border border-slate-800 text-[10px] font-semibold text-slate-300 hover:text-white flex items-center gap-1 transition-colors"
+          >
+            <span>Open Wall</span>
+            <ExternalLink className="w-2.5 h-2.5 text-slate-500" />
+          </a>
+        </div>
+      </div>
+
+      {/* Messages Feed */}
+      {loading ? (
+        <div className="p-8 text-center space-y-3 bg-slate-900/50 border border-slate-800 rounded-3xl">
+          <RefreshCw className="w-6 h-6 animate-spin text-amber-400 mx-auto" />
+          <p className="text-xs text-slate-400 font-medium">
+            Fetching messages from RetroAchievements.org...
+          </p>
+        </div>
+      ) : error ? (
+        <div className="p-6 text-center space-y-3 bg-rose-950/20 border border-rose-900/50 rounded-3xl">
+          <p className="text-xs text-rose-300 font-semibold">{error}</p>
+          <button
+            onClick={() => loadWebsiteMessages(selectedUser)}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      ) : wallComments.length === 0 ? (
+        <div className="p-8 text-center space-y-3 bg-slate-900/40 border border-slate-800/80 rounded-3xl">
+          <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto text-slate-400">
+            <MessageCircle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-xs font-bold text-white">No Website Messages Yet</h4>
+            <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+              {isViewingSelf
+                ? 'No one has left a message on your RetroAchievements profile wall yet.'
+                : `No public messages have been left on ${selectedUser}'s RetroAchievements wall yet.`}
+            </p>
+          </div>
+          <div className="pt-2">
+            <a
+              href={`https://retroachievements.org/user/${encodeURIComponent(selectedUser)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold rounded-xl shadow-md transition-all active:scale-95"
+            >
+              <span>Leave Message on Website</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {wallComments.map((comment) => {
+            const timeInfo = formatTimestamp(comment.submitted);
+            const isFromCurrentUser =
+              comment.user.toLowerCase() === currentUser.toLowerCase();
+
+            return (
+              <div
+                key={comment.ulid || `${comment.user}-${comment.submitted}`}
+                className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-3.5 shadow-md transition-all space-y-2.5"
+              >
+                {/* Message Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <button
+                      onClick={() => {
+                        sounds.playTap();
+                        onOpenUserProfile(comment.user);
+                      }}
+                      className="relative group shrink-0"
+                      title={`View ${comment.user}'s Profile`}
+                    >
+                      <img
+                        src={getUserAvatarUrl(undefined, comment.user)}
+                        alt={comment.user}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src =
+                            'https://media.retroachievements.org/UserPic/Scott.png';
+                        }}
+                        className="w-8 h-8 rounded-full object-cover ring-1 ring-amber-500/40 bg-slate-800"
+                      />
+                    </button>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            sounds.playTap();
+                            onOpenUserProfile(comment.user);
+                          }}
+                          className="text-xs font-bold text-white hover:text-amber-400 transition-colors truncate"
+                        >
+                          {comment.user}
+                        </button>
+                        {isFromCurrentUser && (
+                          <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold px-1.5 py-0.2 rounded-full">
+                            You
+                          </span>
+                        )}
                       </div>
-                      {c.submitted && (
-                        <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                          {new Date(c.submitted).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                        <Clock className="w-2.5 h-2.5 text-slate-500" />
+                        <span title={timeInfo.formatted}>{timeInfo.relative}</span>
+                        <span className="text-slate-600">•</span>
+                        <span className="text-emerald-400 font-medium">via RetroAchievements.org</span>
+                      </div>
                     </div>
-
-                    <p className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
-                      {c.commentText}
-                    </p>
                   </div>
-                ))
-              )}
-            </div>
-          )}
+
+                  {/* Actions for this sender */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <a
+                      href={`https://retroachievements.org/createmessage.php?t=${encodeURIComponent(comment.user)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Send Official PM to ${comment.user} on RetroAchievements.org`}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 transition-colors"
+                    >
+                      <SendHorizontal className="w-3.5 h-3.5" />
+                    </a>
+
+                    <button
+                      onClick={() => {
+                        sounds.playTap();
+                        onOpenUserProfile(comment.user);
+                      }}
+                      title="Inspect Profile"
+                      className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-[10px] font-semibold transition-colors"
+                    >
+                      Profile
+                    </button>
+                  </div>
+                </div>
+
+                {/* Message Body */}
+                <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 text-xs text-slate-200 leading-relaxed whitespace-pre-wrap break-words font-normal">
+                  {comment.commentText}
+                </div>
+
+                {/* Quick Action Footer */}
+                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                  <span className="font-mono text-[9px] text-slate-600 truncate max-w-[150px]">
+                    ID: {comment.ulid || 'Verified'}
+                  </span>
+
+                  <a
+                    href={`https://retroachievements.org/user/${encodeURIComponent(comment.user)}#user-wall`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-amber-400/90 hover:text-amber-300 font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <span>Reply on {comment.user}&apos;s Wall</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

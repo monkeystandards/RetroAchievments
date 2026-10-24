@@ -9,6 +9,7 @@ import {
   WantedItem,
   ChatMessage,
   ConversationSummary,
+  RetroAchievementWallComment,
 } from '../types/retro';
 
 // Storage keys
@@ -151,13 +152,14 @@ export const api = {
     return res.json();
   },
 
-  // Real RetroAchievements Wall Messages
-  async getWallComments(username: string): Promise<any> {
+  // Real RetroAchievements Website Messages (Wall Comments)
+  async getWallComments(username: string): Promise<RetroAchievementWallComment[]> {
     const res = await fetch(`/api/ra/wall/${encodeURIComponent(username)}`, {
       headers: getHeaders(),
     });
     if (!res.ok) throw new Error(`Failed to load wall comments for ${username}`);
-    return res.json();
+    const data = await res.json();
+    return data.results || data.comments || [];
   },
 
   // Messages API

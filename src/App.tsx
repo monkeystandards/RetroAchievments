@@ -180,26 +180,20 @@ export default function App() {
     const title = isWanted ? achievement.achievementTitle : achievement.title;
     const gameTitle = isWanted ? achievement.gameTitle : game?.title || 'Retro Game';
     const points = achievement.points;
-    const badgeName = achievement.badgeName;
-    const badgeUrl = `https://media.retroachievements.org/Badge/${badgeName}.png`;
+    const achId = isWanted ? achievement.achievementId : achievement.id;
 
-    const targetUser = following.length > 0 ? following[0].user : 'colesie121';
+    const targetUser = following.length > 0 ? following[0].user : 'Scott';
     setChatRecipient(targetUser);
     setActiveTab('messages');
-    showToast(`Sharing "${title}" with ${targetUser}`, 'info');
+    showToast(`Sharing "${title}" with ${targetUser} via RetroAchievements`, 'info');
 
-    api.sendMessage({
-      recipient: targetUser,
-      text: `Check out this achievement from ${gameTitle}: "${title}" (${points} pts)!`,
-      attachment: {
-        type: 'achievement',
-        id: isWanted ? achievement.achievementId : achievement.id,
-        title,
-        subtitle: gameTitle,
-        badgeUrl,
-        points,
-      },
-    }).catch((err) => console.error(err));
+    // Open official RetroAchievements website message composer
+    const composeUrl = `https://retroachievements.org/createmessage.php?t=${encodeURIComponent(
+      targetUser
+    )}&s=${encodeURIComponent(`Check out: ${title}`)}&b=${encodeURIComponent(
+      `Hey ${targetUser}, check out this achievement from ${gameTitle}: "${title}" (${points} pts)! https://retroachievements.org/achievement/${achId}`
+    )}`;
+    window.open(composeUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleNavigateToGame = (gameId: number) => {
@@ -230,11 +224,11 @@ export default function App() {
     headerTitle = 'Community & Following';
   } else if (activeTab === 'messages') {
     if (chatRecipient) {
-      headerTitle = `Chat with ${chatRecipient}`;
+      headerTitle = `${chatRecipient}'s Wall`;
       showBack = true;
       onBack = () => setChatRecipient(null);
     } else {
-      headerTitle = 'Direct Messages';
+      headerTitle = 'RA Website Messages';
     }
   }
 
