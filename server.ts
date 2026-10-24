@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import * as ra from '@retroachievements/api';
 
@@ -85,83 +86,62 @@ export interface WantedAchievement {
   dateAchieved?: string;
 }
 
-// Seed initial messages with a friend/follower so the messaging feature is active immediately
-let messagesStore: ChatMessage[] = [
-  {
-    id: 'msg-1',
-    sender: 'colesie121',
-    recipient: DEFAULT_USERNAME,
-    text: 'Hey! Did you check out the new achievement set for F-Zero X on N64? The Staff Ghost times are insane!',
-    timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-    read: true,
-    attachment: {
-      type: 'achievement',
-      id: 53574,
-      title: 'Classic Cruising',
-      subtitle: 'F-Zero X (N64)',
-      badgeUrl: 'https://media.retroachievements.org/Badge/55003.png',
-      points: 50,
-    },
-  },
-  {
-    id: 'msg-2',
-    sender: DEFAULT_USERNAME,
-    recipient: 'colesie121',
-    text: 'Just added that one to my Wanted List! Planning a weekend grind session for it.',
-    timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-    read: true,
-  },
-  {
-    id: 'msg-3',
-    sender: 'colesie121',
-    recipient: DEFAULT_USERNAME,
-    text: 'Nice! Hit me up when you attempt Mute City, I found a clean shortcut on the loop.',
-    timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-    read: false,
-  },
-  {
-    id: 'msg-4',
-    sender: 'Sarconius',
-    recipient: DEFAULT_USERNAME,
-    text: 'Awesome progress on your Retro leaderboard rank recently! Keep pushing!',
-    timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
-    read: true,
-  },
-];
+const DATA_DIR = path.join(__dirname, 'data');
+const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
+const WANTED_FILE = path.join(DATA_DIR, 'wanted.json');
 
-let wantedListStore: WantedAchievement[] = [
-  {
-    id: 'wanted-1',
-    achievementId: 53574,
-    gameId: 10133,
-    gameTitle: 'F-Zero X',
-    achievementTitle: 'Classic Cruising',
-    description: `Beat the Staff Ghost time of 1'12"507 on Mute City`,
-    points: 50,
-    badgeName: '55003',
-    type: 'progression',
-    priority: 'high',
-    notes: 'Use Blue Falcon and optimize boost pads on turn 3',
-    achieved: false,
-    dateAdded: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-  },
-  {
-    id: 'wanted-2',
-    achievementId: 128551,
-    gameId: 12211,
-    gameTitle: 'Teenage Mutant Ninja Turtles: Turtles in Time',
-    achievementTitle: 'Big Apple, 3AM',
-    description: 'Clear Stage 1 in any difficulty. (Factory Settings)',
-    points: 5,
-    badgeName: '141252',
-    type: 'progression',
-    priority: 'normal',
-    notes: 'Fun warm-up run with Leonardo',
-    achieved: true,
-    dateAdded: new Date(Date.now() - 3600000 * 24 * 4).toISOString(),
-    dateAchieved: new Date(Date.now() - 3600000 * 24 * 1).toISOString(),
-  },
-];
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function loadStoredMessages(): ChatMessage[] {
+  ensureDataDir();
+  try {
+    if (fs.existsSync(MESSAGES_FILE)) {
+      const data = fs.readFileSync(MESSAGES_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Error loading stored messages:', e);
+  }
+  return [];
+}
+
+function persistMessages(msgs: ChatMessage[]) {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(MESSAGES_FILE, JSON.stringify(msgs, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error saving messages to disk:', e);
+  }
+}
+
+function loadStoredWanted(): WantedAchievement[] {
+  ensureDataDir();
+  try {
+    if (fs.existsSync(WANTED_FILE)) {
+      const data = fs.readFileSync(WANTED_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Error loading stored wanted list:', e);
+  }
+  return [];
+}
+
+function persistWanted(items: WantedAchievement[]) {
+  ensureDataDir();
+  try {
+    fs.writeFileSync(WANTED_FILE, JSON.stringify(items, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Error saving wanted list to disk:', e);
+  }
+}
+
+let messagesStore: ChatMessage[] = loadStoredMessages();
+let wantedListStore: WantedAchievement[] = loadStoredWanted();
 
 // Configuration status endpoint
 app.get('/api/ra/config', (_req, res) => {
@@ -468,28 +448,7 @@ app.post('/api/messages', (req, res) => {
   };
 
   messagesStore.push(newMessage);
-
-  // If sending to one of our simulated community users, send a fun automatic gamer reply after a brief moment
-  const simulatedUsers = ['colesie121', 'sarconius', 'maxmilyin', 'chronogear'];
-  if (simulatedUsers.includes(recipient.toLowerCase())) {
-    setTimeout(() => {
-      const replies = [
-        `Awesome catch! I remember grinding that retro achievement for hours. Good luck with the next set!`,
-        `Nice message! Are you going for Hardcore mode or Softcore? The leaderboard competition is heating up!`,
-        `Thanks for sharing! Retro gaming on these classic titles never gets old.`,
-        `GG! Added that to my watchlist as well. Let's see who masters the set first!`,
-      ];
-      const autoReplyText = replies[Math.floor(Math.random() * replies.length)];
-      messagesStore.push({
-        id: `msg-reply-${Date.now()}`,
-        sender: recipient,
-        recipient: currentUsername,
-        text: autoReplyText,
-        timestamp: new Date().toISOString(),
-        read: false,
-      });
-    }, 2500);
-  }
+  persistMessages(messagesStore);
 
   res.status(201).json(newMessage);
 });
@@ -500,13 +459,37 @@ app.post('/api/messages/read', (req, res) => {
   const { withUser } = req.body;
   if (!withUser) return res.status(400).json({ error: 'withUser is required' });
 
+  let updated = false;
   messagesStore.forEach((m) => {
     if (m.recipient.toLowerCase() === currentUsername.toLowerCase() && m.sender.toLowerCase() === withUser.toLowerCase()) {
       m.read = true;
+      updated = true;
     }
   });
 
+  if (updated) {
+    persistMessages(messagesStore);
+  }
+
   res.json({ success: true });
+});
+
+// Real RetroAchievements Wall Messages for a player
+app.get('/api/ra/wall/:username', async (req, res) => {
+  try {
+    const targetUser = req.params.username;
+    const { auth } = getAuth(req);
+    const cacheKey = `wall_${targetUser.toLowerCase()}`;
+    const cached = getCached(cacheKey);
+    if (cached) return res.json(cached);
+
+    const comments = await ra.getComments(auth, { identifier: targetUser });
+    setCache(cacheKey, comments, 60); // 1 min cache
+    res.json(comments);
+  } catch (err: any) {
+    console.error('Error fetching RA wall comments:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch wall comments' });
+  }
 });
 
 // Wanted List API
@@ -544,6 +527,7 @@ app.post('/api/wanted-list', (req, res) => {
   };
 
   wantedListStore.unshift(newItem);
+  persistWanted(wantedListStore);
   res.status(201).json(newItem);
 });
 
@@ -560,12 +544,14 @@ app.patch('/api/wanted-list/:id', (req, res) => {
   };
 
   wantedListStore[idx] = updated;
+  persistWanted(wantedListStore);
   res.json(updated);
 });
 
 app.delete('/api/wanted-list/:id', (req, res) => {
   const { id } = req.params;
   wantedListStore = wantedListStore.filter((w) => w.id !== id);
+  persistWanted(wantedListStore);
   res.json({ success: true, deletedId: id });
 });
 

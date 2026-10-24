@@ -151,6 +151,15 @@ export const api = {
     return res.json();
   },
 
+  // Real RetroAchievements Wall Messages
+  async getWallComments(username: string): Promise<any> {
+    const res = await fetch(`/api/ra/wall/${encodeURIComponent(username)}`, {
+      headers: getHeaders(),
+    });
+    if (!res.ok) throw new Error(`Failed to load wall comments for ${username}`);
+    return res.json();
+  },
+
   // Messages API
   async getConversations(): Promise<ConversationSummary[]> {
     const res = await fetch(`/api/messages`, {
