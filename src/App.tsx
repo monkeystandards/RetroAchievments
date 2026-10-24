@@ -183,17 +183,28 @@ export default function App() {
     const achId = isWanted ? achievement.achievementId : achievement.id;
 
     const targetUser = following.length > 0 ? following[0].user : 'Scott';
+    const badgeName = achievement.badgeName;
+    const badgeUrl = `https://media.retroachievements.org/Badge/${badgeName}.png`;
+
     setChatRecipient(targetUser);
     setActiveTab('messages');
-    showToast(`Sharing "${title}" with ${targetUser} via RetroAchievements`, 'info');
+    showToast(`Shared "${title}" with ${targetUser}`, 'info');
 
-    // Open official RetroAchievements website message composer
-    const composeUrl = `https://retroachievements.org/createmessage.php?t=${encodeURIComponent(
-      targetUser
-    )}&s=${encodeURIComponent(`Check out: ${title}`)}&b=${encodeURIComponent(
-      `Hey ${targetUser}, check out this achievement from ${gameTitle}: "${title}" (${points} pts)! https://retroachievements.org/achievement/${achId}`
-    )}`;
-    window.open(composeUrl, '_blank', 'noopener,noreferrer');
+    // Send directly into the App-to-App conversation thread
+    api
+      .sendMessage({
+        recipient: targetUser,
+        text: `Check out this achievement from ${gameTitle}: "${title}" (${points} pts)!`,
+        attachment: {
+          type: 'achievement',
+          id: achId,
+          title,
+          subtitle: gameTitle,
+          badgeUrl,
+          points,
+        },
+      })
+      .catch((err) => console.error('Failed to share achievement:', err));
   };
 
   const handleNavigateToGame = (gameId: number) => {
@@ -224,11 +235,11 @@ export default function App() {
     headerTitle = 'Community & Following';
   } else if (activeTab === 'messages') {
     if (chatRecipient) {
-      headerTitle = `${chatRecipient}'s Wall`;
+      headerTitle = `Chat: ${chatRecipient}`;
       showBack = true;
       onBack = () => setChatRecipient(null);
     } else {
-      headerTitle = 'RA Website Messages';
+      headerTitle = 'Player Messages';
     }
   }
 
