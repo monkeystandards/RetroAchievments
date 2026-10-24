@@ -1,14 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  Wifi,
-  Battery,
-  Trophy,
   Volume2,
   VolumeX,
-  Smartphone,
-  Maximize2,
   ChevronLeft,
-  Settings,
+  Trophy,
   Sparkles,
 } from 'lucide-react';
 import { sounds } from '../utils/audio';
@@ -41,23 +36,7 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
   badgeNotificationCount = 0,
   isAuthenticated = true,
 }) => {
-  const [isFrameMode, setIsFrameMode] = useState<boolean>(true);
-  const [currentTime, setCurrentTime] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState<boolean>(sounds.isEnabled());
-
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      let hours = now.getHours();
-      const mins = now.getMinutes().toString().padStart(2, '0');
-      const isPm = hours >= 12;
-      hours = hours % 12 || 12;
-      setCurrentTime(`${hours}:${mins}`);
-    };
-    updateTime();
-    const interval = setInterval(updateTime, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   const toggleSound = () => {
     const next = !soundEnabled;
@@ -67,82 +46,11 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-0 md:p-6 transition-colors selection:bg-amber-500/30 selection:text-amber-200">
-      {/* Desktop view controller strip */}
-      <div className="hidden md:flex items-center justify-between w-full max-w-5xl mb-4 px-2 text-xs text-slate-400">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          <span className="font-semibold text-slate-200">RetroTrack Android</span>
-          <span>·</span>
-          <span>RetroAchievements Mobile Companion</span>
-        </div>
-
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1">
-          <button
-            onClick={() => setIsFrameMode(true)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-              isFrameMode ? 'bg-amber-500 text-slate-950 shadow-sm font-semibold' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Pixel 8 Frame</span>
-          </button>
-          <button
-            onClick={() => setIsFrameMode(false)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
-              !isFrameMode ? 'bg-amber-500 text-slate-950 shadow-sm font-semibold' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span>Responsive / Tablet</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Container: Android Phone Frame OR Full Width Tablet */}
-      <div
-        className={`w-full transition-all duration-300 relative flex flex-col ${
-          isFrameMode
-            ? 'max-w-[430px] h-[920px] max-h-[96vh] rounded-[48px] border-[10px] border-slate-800/90 shadow-2xl shadow-amber-950/20 bg-slate-900 overflow-hidden ring-1 ring-slate-700/50'
-            : 'max-w-5xl min-h-[880px] rounded-2xl border border-slate-800 bg-slate-900 shadow-xl overflow-hidden'
-        }`}
-      >
-        {/* Android Status Bar */}
-        <div className="h-11 px-6 bg-slate-950/80 backdrop-blur-md flex items-center justify-between text-xs font-medium text-slate-300 select-none z-30 shrink-0 border-b border-slate-800/50">
-          {/* Left: Clock & RA Trophy Icon */}
-          <div className="flex items-center gap-2">
-            <span className="font-semibold tracking-tight">{currentTime || '9:41'}</span>
-            <div className="flex items-center gap-1 text-amber-400">
-              <Trophy className="w-3.5 h-3.5" />
-              {badgeNotificationCount > 0 && (
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1 rounded-full font-mono">
-                  {badgeNotificationCount}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Center: Camera Notch (In Frame Mode) */}
-          {isFrameMode && (
-            <div className="w-20 h-4 bg-slate-950 rounded-full flex items-center justify-center">
-              <div className="w-3 h-3 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-cyan-950/80" />
-              </div>
-            </div>
-          )}
-
-          {/* Right: Connectivity Icons */}
-          <div className="flex items-center gap-2 text-slate-400">
-            <span className="text-[10px] font-mono tracking-wider font-semibold text-slate-300">5G</span>
-            <Wifi className="w-3.5 h-3.5 text-slate-300" />
-            <div className="flex items-center gap-0.5">
-              <Battery className="w-4 h-4 text-emerald-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Top App Bar */}
-        <header className="h-14 px-4 bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between z-20 shrink-0">
+    <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col transition-colors selection:bg-amber-500/30 selection:text-amber-200 antialiased">
+      {/* Native App Top Header */}
+      <header className="sticky top-0 z-30 w-full bg-slate-900/95 backdrop-blur-md border-b border-slate-800/80">
+        <div className="max-w-4xl mx-auto h-14 px-4 flex items-center justify-between">
+          {/* Left: Navigation / App Title */}
           <div className="flex items-center gap-2 min-w-0">
             {showBack && (
               <button
@@ -153,33 +61,40 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
                 <ChevronLeft className="w-5 h-5" />
               </button>
             )}
-            <div className="flex items-center gap-2 truncate">
+
+            <div className="flex items-center gap-2.5 truncate">
               {!showBack && (
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-slate-950 font-bold text-xs shadow-sm shadow-amber-500/30 shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 shrink-0">
                   RA
                 </div>
               )}
-              <h1 className="text-base font-bold text-slate-100 truncate tracking-tight">{headerTitle}</h1>
+              <h1 className="text-base font-extrabold text-slate-100 truncate tracking-tight font-display">
+                {headerTitle}
+              </h1>
             </div>
           </div>
 
-          {/* Top Bar Actions */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Right: Sound Toggle & User Profile Avatar */}
+          <div className="flex items-center gap-2 shrink-0">
             {/* Audio Toggle */}
             <button
               onClick={toggleSound}
-              title={soundEnabled ? 'Mute Retro Sounds' : 'Enable Retro Sounds'}
+              title={soundEnabled ? 'Mute Sound Effects' : 'Enable Sound Effects'}
               className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-amber-400 hover:bg-slate-800/80 active:scale-95 transition-colors"
             >
-              {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4" />}
+              {soundEnabled ? (
+                <Volume2 className="w-4 h-4 text-amber-400" />
+              ) : (
+                <VolumeX className="w-4 h-4" />
+              )}
             </button>
 
-            {/* Profile / Account Avatar */}
+            {/* Profile / Account Settings */}
             {isAuthenticated && (
               <button
                 onClick={onOpenSettings}
-                className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-800 active:scale-95 transition-all focus-visible:outline-amber-500"
-                title="Settings & Accounts"
+                className="flex items-center gap-1.5 p-0.5 rounded-full hover:ring-2 hover:ring-amber-500/50 active:scale-95 transition-all focus-visible:outline-amber-500"
+                title="Account Settings & Profile"
               >
                 <img
                   src={getUserAvatarUrl(userPic, username)}
@@ -194,72 +109,71 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
               </button>
             )}
           </div>
-        </header>
-
-        {/* Scrollable Main Viewport */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden relative bg-slate-950/40 scroll-smooth">
-          {children}
-        </main>
-
-        {/* Android Bottom Navigation Bar */}
-        {isAuthenticated && (
-          <nav
-            aria-label="Bottom Navigation"
-            className="h-16 px-2 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/80 grid grid-cols-5 items-center z-20 shrink-0"
-          >
-          {[
-            { id: 'dashboard', label: 'Home', icon: Trophy },
-            { id: 'games', label: 'Games', icon: Sparkles },
-            { id: 'wanted', label: 'Wanted', icon: Trophy, isTarget: true },
-            { id: 'community', label: 'Social', icon: Trophy, isSocial: true },
-            { id: 'messages', label: 'Messages', icon: Trophy, isChat: true },
-          ].map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  sounds.playTap();
-                  onTabChange(item.id);
-                }}
-                className="flex flex-col items-center justify-center py-1 rounded-xl transition-all relative group"
-              >
-                {/* Active Indicator Background Pill */}
-                <div
-                  className={`w-12 h-7 rounded-full flex items-center justify-center transition-all ${
-                    isActive ? 'bg-amber-500/20 text-amber-400' : 'text-slate-400 group-hover:text-slate-200'
-                  }`}
-                >
-                  <NavIcon id={item.id} isActive={isActive} />
-                  {item.id === 'messages' && badgeNotificationCount > 0 && (
-                    <span className="absolute top-1 right-3 w-4 h-4 bg-amber-500 text-slate-950 rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-900">
-                      {badgeNotificationCount}
-                    </span>
-                  )}
-                </div>
-                <span
-                  className={`text-[10px] font-medium tracking-tight mt-0.5 whitespace-nowrap transition-colors ${
-                    isActive ? 'text-amber-400 font-semibold' : 'text-slate-400'
-                  }`}
-                >
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-        )}
-
-        {/* Android Gesture Pill Indicator */}
-        <div className="h-4 bg-slate-950 flex items-center justify-center z-20 shrink-0">
-          <div className="w-32 h-1 bg-slate-600/70 rounded-full hover:bg-slate-400 transition-colors cursor-pointer" />
         </div>
-      </div>
+      </header>
+
+      {/* Main App Content Viewport */}
+      <main className="flex-1 w-full max-w-4xl mx-auto px-3 sm:px-6 py-4 pb-24 overflow-y-auto">
+        {children}
+      </main>
+
+      {/* Native Bottom Navigation Bar */}
+      {isAuthenticated && (
+        <nav
+          aria-label="Bottom Navigation"
+          className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 shadow-2xl shadow-black/80"
+        >
+          <div className="max-w-4xl mx-auto h-16 px-2 grid grid-cols-5 items-center">
+            {[
+              { id: 'dashboard', label: 'Home' },
+              { id: 'games', label: 'Games' },
+              { id: 'wanted', label: 'Wanted' },
+              { id: 'community', label: 'Social' },
+              { id: 'messages', label: 'Messages' },
+            ].map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    sounds.playTap();
+                    onTabChange(item.id);
+                  }}
+                  className="flex flex-col items-center justify-center py-1 rounded-xl transition-all relative group"
+                >
+                  {/* Active Indicator Background Pill */}
+                  <div
+                    className={`w-12 h-7 rounded-full flex items-center justify-center transition-all ${
+                      isActive
+                        ? 'bg-amber-500/20 text-amber-400'
+                        : 'text-slate-400 group-hover:text-slate-200'
+                    }`}
+                  >
+                    <NavIcon id={item.id} isActive={isActive} />
+                    {item.id === 'messages' && badgeNotificationCount > 0 && (
+                      <span className="absolute top-1 right-3 w-4 h-4 bg-amber-500 text-slate-950 rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-900">
+                        {badgeNotificationCount}
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className={`text-[10px] font-medium tracking-tight mt-0.5 whitespace-nowrap transition-colors ${
+                      isActive ? 'text-amber-400 font-semibold' : 'text-slate-400'
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
     </div>
   );
 };
 
-// Distinctive Icons for bottom navigation
+// Icons for bottom navigation
 const NavIcon: React.FC<{ id: string; isActive: boolean }> = ({ id, isActive }) => {
   const stroke = isActive ? 2.3 : 1.8;
   switch (id) {
