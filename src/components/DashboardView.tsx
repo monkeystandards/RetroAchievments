@@ -9,7 +9,10 @@ import {
   ChevronRight,
   Sparkles,
   Users,
+  LogIn,
+  User,
 } from 'lucide-react';
+import { sounds } from '../utils/audio';
 import { UserProfile, UserSummaryData, FollowedUser, RecentlyPlayedGame } from '../types/retro';
 import { getUserAvatarUrl, getGameImageUrl, getBadgeUrl } from '../services/api';
 
@@ -23,6 +26,7 @@ interface DashboardViewProps {
   onNavigateToWanted: () => void;
   onNavigateToCommunity: () => void;
   onSelectUser: (username: string) => void;
+  onOpenSettings?: () => void;
   loading: boolean;
 }
 
@@ -36,6 +40,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToWanted,
   onNavigateToCommunity,
   onSelectUser,
+  onOpenSettings,
   loading,
 }) => {
   if (loading && !profile) {
@@ -116,6 +121,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
           </div>
+
+          {onOpenSettings && (
+            <button
+              onClick={() => {
+                sounds.playTap();
+                onOpenSettings();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700/80 text-xs font-semibold active:scale-95 transition-all shrink-0 shadow-sm"
+              title="Account & Settings"
+            >
+              <User className="w-3.5 h-3.5 text-amber-400" />
+              <span>Account</span>
+            </button>
+          )}
         </div>
 
         {/* Stats Grid */}

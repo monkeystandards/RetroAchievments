@@ -7,6 +7,7 @@ import { CommunityView } from './components/CommunityView';
 import { MessagesView } from './components/MessagesView';
 import { UserProfileModal } from './components/UserProfileModal';
 import { AccountSettingsModal } from './components/AccountSettingsModal';
+import { LoginView } from './components/LoginView';
 import {
   UserProfile,
   UserSummaryData,
@@ -16,10 +17,11 @@ import {
   GameAchievement,
   GameDetailData,
 } from './types/retro';
-import { api, getActiveUsername } from './services/api';
+import { api, getActiveUsername, isAuthenticated } from './services/api';
 import { sounds } from './utils/audio';
 
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(isAuthenticated());
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [currentUsername, setCurrentUsername] = useState<string>(getActiveUsername());
 
@@ -30,9 +32,9 @@ export default function App() {
   const [followers, setFollowers] = useState<FollowedUser[]>([]);
   const [consoles, setConsoles] = useState<ConsoleItem[]>([]);
   const [wantedList, setWantedList] = useState<WantedItem[]>([]);
-  const [loadingInitial, setLoadingInitial] = useState<boolean>(true);
+  const [loadingInitial, setLoadingInitial] = useState<boolean>(false);
 
-  // Navigation navigation contexts
+  // Navigation contexts
   const [selectedConsoleId, setSelectedConsoleId] = useState<number>(3); // Default SNES
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
   const [chatRecipient, setChatRecipient] = useState<string | null>(null);
@@ -49,11 +51,13 @@ export default function App() {
     }, 2800);
   }, []);
 
-  // Fetch initial profile & data
+  // Fetch initial profile & data when logged in
   const loadUserData = useCallback(async () => {
+    const username = getActiveUsername();
+    if (!username) return;
+
     setLoadingInitial(true);
     try {
-      const username = getActiveUsername();
       setCurrentUsername(username);
 
       const [profileRes, followingRes, followersRes, consolesRes, wantedRes] = await Promise.allSettled([
@@ -91,8 +95,10 @@ export default function App() {
   }, [selectedConsoleId]);
 
   useEffect(() => {
-    loadUserData();
-  }, [loadUserData]);
+    if (isLoggedIn) {
+      loadUserData();
+    }
+  }, [isLoggedIn, loadUserData]);
 
   // Handle Wanted List toggling
   const handleToggleWanted = async (achievement: GameAchievement, game: GameDetailData) => {
@@ -177,13 +183,11 @@ export default function App() {
     const badgeName = achievement.badgeName;
     const badgeUrl = `https://media.retroachievements.org/Badge/${badgeName}.png`;
 
-    // Pick top friend or colesie121
     const targetUser = following.length > 0 ? following[0].user : 'colesie121';
     setChatRecipient(targetUser);
     setActiveTab('messages');
     showToast(`Sharing "${title}" with ${targetUser}`, 'info');
 
-    // Send message with attachment automatically
     api.sendMessage({
       recipient: targetUser,
       text: `Check out this achievement from ${gameTitle}: "${title}" (${points} pts)!`,
@@ -208,7 +212,9 @@ export default function App() {
   let showBack = false;
   let onBack: (() => void) | undefined = undefined;
 
-  if (activeTab === 'dashboard') {
+  if (!isLoggedIn) {
+    headerTitle = 'RetroAchievements Sign In';
+  } else if (activeTab === 'dashboard') {
     headerTitle = 'RetroTrack Hub';
   } else if (activeTab === 'games') {
     if (selectedGameId) {
@@ -239,7 +245,7 @@ export default function App() {
         onTabChange={(tab) => {
           setActiveTab(tab);
           if (tab === 'games' && selectedGameId) {
-            // Keep game selected or allow user to browse
+            // keep game selected
           }
         }}
         headerTitle={headerTitle}
@@ -249,84 +255,99 @@ export default function App() {
         username={currentUsername}
         userPic={profile?.userPic}
         badgeNotificationCount={wantedList.filter((w) => !w.achieved).length}
+        isAuthenticated={isLoggedIn}
       >
-        {/* Tab 1: Dashboard */}
-        {activeTab === 'dashboard' && (
-          <DashboardView
-            profile={profile}
-            summary={summary}
-            following={following}
-            wantedCount={wantedList.filter((w) => !w.achieved).length}
-            onNavigateToGames={(cId) => {
-              if (cId) setSelectedConsoleId(cId);
-              setSelectedGameId(null);
-              setActiveTab('games');
-            }}
-            onNavigateToGameDetails={(gId) => {
-              setSelectedGameId(gId);
-              setActiveTab('games');
-            }}
-            onNavigateToWanted={() => setActiveTab('wanted')}
-            onNavigateToCommunity={() => setActiveTab('community')}
-            onSelectUser={(u) => setInspectedUsername(u)}
-            loading={loadingInitial}
-          />
-        )}
-
-        {/* Tab 2: Games & Achievement Sets */}
-        {activeTab === 'games' && (
-          <GamesView
-            consoles={consoles}
-            selectedConsoleId={selectedConsoleId}
-            onSelectConsole={(cId) => {
-              setSelectedConsoleId(cId);
-              setSelectedGameId(null);
-            }}
-            selectedGameId={selectedGameId}
-            onSelectGame={(gId) => setSelectedGameId(gId)}
-            wantedList={wantedList}
-            onToggleWanted={handleToggleWanted}
-            onShareInChat={(ach, game) => handleShareAchievementInChat(ach, game)}
-          />
-        )}
-
-        {/* Tab 3: Wanted List Tracker */}
-        {activeTab === 'wanted' && (
-          <WantedListView
-            wantedList={wantedList}
-            onToggleAchieved={handleToggleAchievedInWanted}
-            onRemoveItem={handleRemoveWantedItem}
-            onUpdateNotes={handleUpdateNotes}
-            onNavigateToGame={handleNavigateToGame}
-            onShareInChat={(item) => handleShareAchievementInChat(item)}
-            onBrowseGames={() => {
-              setSelectedGameId(null);
-              setActiveTab('games');
+        {/* If user is not authenticated with username & password, show LoginView */}
+        {!isLoggedIn ? (
+          <LoginView
+            onLoginSuccess={(user) => {
+              setIsLoggedIn(true);
+              setCurrentUsername(user);
+              showToast(`Welcome to RetroTrack, ${user}!`, 'success');
             }}
           />
-        )}
+        ) : (
+          <>
+            {/* Tab 1: Dashboard */}
+            {activeTab === 'dashboard' && (
+              <DashboardView
+                profile={profile}
+                summary={summary}
+                following={following}
+                wantedCount={wantedList.filter((w) => !w.achieved).length}
+                onNavigateToGames={(cId) => {
+                  if (cId) setSelectedConsoleId(cId);
+                  setSelectedGameId(null);
+                  setActiveTab('games');
+                }}
+                onNavigateToGameDetails={(gId) => {
+                  setSelectedGameId(gId);
+                  setActiveTab('games');
+                }}
+                onNavigateToWanted={() => setActiveTab('wanted')}
+                onNavigateToCommunity={() => setActiveTab('community')}
+                onSelectUser={(u) => setInspectedUsername(u)}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+                loading={loadingInitial}
+              />
+            )}
 
-        {/* Tab 4: Community & Following */}
-        {activeTab === 'community' && (
-          <CommunityView
-            following={following}
-            followers={followers}
-            onOpenMessageWithUser={handleOpenChatWithUser}
-            onOpenUserProfile={(u) => setInspectedUsername(u)}
-            onRefreshFollows={loadUserData}
-          />
-        )}
+            {/* Tab 2: Games & Achievement Sets */}
+            {activeTab === 'games' && (
+              <GamesView
+                consoles={consoles}
+                selectedConsoleId={selectedConsoleId}
+                onSelectConsole={(cId) => {
+                  setSelectedConsoleId(cId);
+                  setSelectedGameId(null);
+                }}
+                selectedGameId={selectedGameId}
+                onSelectGame={(gId) => setSelectedGameId(gId)}
+                wantedList={wantedList}
+                onToggleWanted={handleToggleWanted}
+                onShareInChat={(ach, game) => handleShareAchievementInChat(ach, game)}
+              />
+            )}
 
-        {/* Tab 5: Messages */}
-        {activeTab === 'messages' && (
-          <MessagesView
-            activeRecipient={chatRecipient}
-            onSelectRecipient={(u) => setChatRecipient(u)}
-            onOpenUserProfile={(u) => setInspectedUsername(u)}
-            onNavigateToGame={handleNavigateToGame}
-            wantedList={wantedList}
-            currentUser={currentUsername}
-          />
+            {/* Tab 3: Wanted List Tracker */}
+            {activeTab === 'wanted' && (
+              <WantedListView
+                wantedList={wantedList}
+                onToggleAchieved={handleToggleAchievedInWanted}
+                onRemoveItem={handleRemoveWantedItem}
+                onUpdateNotes={handleUpdateNotes}
+                onNavigateToGame={handleNavigateToGame}
+                onShareInChat={(item) => handleShareAchievementInChat(item)}
+                onBrowseGames={() => {
+                  setSelectedGameId(null);
+                  setActiveTab('games');
+                }}
+              />
+            )}
+
+            {/* Tab 4: Community & Following */}
+            {activeTab === 'community' && (
+              <CommunityView
+                following={following}
+                followers={followers}
+                onOpenMessageWithUser={handleOpenChatWithUser}
+                onOpenUserProfile={(u) => setInspectedUsername(u)}
+                onRefreshFollows={loadUserData}
+              />
+            )}
+
+            {/* Tab 5: Messages */}
+            {activeTab === 'messages' && (
+              <MessagesView
+                activeRecipient={chatRecipient}
+                onSelectRecipient={(u) => setChatRecipient(u)}
+                onOpenUserProfile={(u) => setInspectedUsername(u)}
+                onNavigateToGame={handleNavigateToGame}
+                wantedList={wantedList}
+                currentUser={currentUsername}
+              />
+            )}
+          </>
         )}
 
         {/* In-App Toast Notification */}
@@ -350,7 +371,15 @@ export default function App() {
       <AccountSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        onCredentialsUpdated={loadUserData}
+        profile={profile}
+        onLogout={() => {
+          setIsLoggedIn(false);
+          setProfile(null);
+          setSummary(null);
+          setFollowing([]);
+          setFollowers([]);
+          showToast('Signed out of RetroAchievements', 'info');
+        }}
       />
     </>
   );

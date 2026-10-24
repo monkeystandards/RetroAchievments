@@ -14,8 +14,9 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 
 app.use(express.json());
 
-const DEFAULT_API_KEY = process.env.RETROACHIEVEMENTS_API_KEY || 'eAQ12mv8MaVNfF4qjCm8fcaigOIYoNXd';
-const DEFAULT_USERNAME = process.env.DEFAULT_RA_USERNAME || 'Scott';
+import { getDecryptedApiKey } from './src/server/vault.ts';
+
+const DEFAULT_USERNAME = 'Scott';
 
 // Simple in-memory cache for fast responsive mobile loading
 const cache = new Map<string, { data: any; expiry: number }>();
@@ -34,11 +35,11 @@ function setCache(key: string, data: any, ttlSeconds: number) {
 }
 
 function getAuth(req: express.Request) {
-  const username = (req.headers['x-ra-user'] as string) || (req.query.ra_user as string) || DEFAULT_USERNAME;
-  const webApiKey = (req.headers['x-ra-key'] as string) || (req.query.ra_key as string) || DEFAULT_API_KEY;
+  const username = (req.headers['x-ra-user'] as string) || (req.query.ra_user as string) || 'Scott';
+  const webApiKey = getDecryptedApiKey();
 
-  if (!username || !webApiKey) {
-    throw new Error('RetroAchievements username and API key are required.');
+  if (!username) {
+    throw new Error('RetroAchievements username is required.');
   }
 
   return {
@@ -165,9 +166,60 @@ let wantedListStore: WantedAchievement[] = [
 // Configuration status endpoint
 app.get('/api/ra/config', (_req, res) => {
   res.json({
-    hasKey: Boolean(DEFAULT_API_KEY),
-    defaultUsername: DEFAULT_USERNAME,
+    authMethod: 'password_only',
+    vaultEncrypted: true,
   });
+});
+
+// RetroAchievements Username & Password Login endpoint
+app.post('/api/ra/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  try {
+    const cleanUser = username.trim();
+    const loginUrl = `https://retroachievements.org/dorequest.php?r=login&u=${encodeURIComponent(cleanUser)}&p=${encodeURIComponent(password)}`;
+    
+    const raRes = await fetch(loginUrl, {
+      headers: {
+        'User-Agent': 'RetroTrack/1.0',
+        Accept: 'application/json',
+      },
+    });
+
+    const data: any = await raRes.json().catch(() => null);
+
+    if (!data || !data.Success) {
+      return res.status(401).json({
+        success: false,
+        error: data?.Error || 'Invalid username or password. Please check your RetroAchievements credentials.',
+      });
+    }
+
+    const authenticatedUser = data.User || cleanUser;
+
+    // Fetch full profile using decrypted app authorization
+    let profileData: any = null;
+    try {
+      const auth = ra.buildAuthorization({ username: authenticatedUser, webApiKey: getDecryptedApiKey() });
+      profileData = await ra.getUserProfile(auth, { username: authenticatedUser });
+    } catch (e) {
+      // Profile fetch can fallback gracefully
+    }
+
+    res.json({
+      success: true,
+      user: authenticatedUser,
+      token: data.Token,
+      score: data.Score,
+      profile: profileData,
+    });
+  } catch (err: any) {
+    console.error('RetroAchievements login error:', err);
+    res.status(500).json({ error: err.message || 'Failed to authenticate with RetroAchievements' });
+  }
 });
 
 // User Profile & Summary

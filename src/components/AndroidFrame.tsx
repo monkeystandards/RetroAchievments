@@ -25,6 +25,7 @@ interface AndroidFrameProps {
   username: string;
   userPic?: string;
   badgeNotificationCount?: number;
+  isAuthenticated?: boolean;
 }
 
 export const AndroidFrame: React.FC<AndroidFrameProps> = ({
@@ -38,6 +39,7 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
   username,
   userPic,
   badgeNotificationCount = 0,
+  isAuthenticated = true,
 }) => {
   const [isFrameMode, setIsFrameMode] = useState<boolean>(true);
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -173,22 +175,24 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
             </button>
 
             {/* Profile / Account Avatar */}
-            <button
-              onClick={onOpenSettings}
-              className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-800 active:scale-95 transition-all focus-visible:outline-amber-500"
-              title="Settings & Accounts"
-            >
-              <img
-                src={getUserAvatarUrl(userPic, username)}
-                alt={username}
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src =
-                    'https://media.retroachievements.org/UserPic/Scott.png';
-                }}
-                className="w-7 h-7 rounded-full object-cover ring-2 ring-amber-500/40 bg-slate-800"
-              />
-            </button>
+            {isAuthenticated && (
+              <button
+                onClick={onOpenSettings}
+                className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-800 active:scale-95 transition-all focus-visible:outline-amber-500"
+                title="Settings & Accounts"
+              >
+                <img
+                  src={getUserAvatarUrl(userPic, username)}
+                  alt={username}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src =
+                      'https://media.retroachievements.org/UserPic/Scott.png';
+                  }}
+                  className="w-7 h-7 rounded-full object-cover ring-2 ring-amber-500/40 bg-slate-800"
+                />
+              </button>
+            )}
           </div>
         </header>
 
@@ -198,10 +202,11 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
         </main>
 
         {/* Android Bottom Navigation Bar */}
-        <nav
-          aria-label="Bottom Navigation"
-          className="h-16 px-2 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/80 grid grid-cols-5 items-center z-20 shrink-0"
-        >
+        {isAuthenticated && (
+          <nav
+            aria-label="Bottom Navigation"
+            className="h-16 px-2 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/80 grid grid-cols-5 items-center z-20 shrink-0"
+          >
           {[
             { id: 'dashboard', label: 'Home', icon: Trophy },
             { id: 'games', label: 'Games', icon: Sparkles },
@@ -243,6 +248,7 @@ export const AndroidFrame: React.FC<AndroidFrameProps> = ({
             );
           })}
         </nav>
+        )}
 
         {/* Android Gesture Pill Indicator */}
         <div className="h-4 bg-slate-950 flex items-center justify-center z-20 shrink-0">

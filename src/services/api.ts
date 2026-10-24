@@ -13,30 +13,33 @@ import {
 
 // Storage keys
 const STORAGE_USER_KEY = 'retro_active_username';
-const STORAGE_API_KEY = 'retro_api_key';
+const STORAGE_TOKEN_KEY = 'retro_auth_token';
 
 export function getActiveUsername(): string {
-  return localStorage.getItem(STORAGE_USER_KEY) || 'Scott';
+  return localStorage.getItem(STORAGE_USER_KEY) || '';
 }
 
 export function setActiveUsername(username: string): void {
   localStorage.setItem(STORAGE_USER_KEY, username.trim());
 }
 
-export function getCustomApiKey(): string {
-  return localStorage.getItem(STORAGE_API_KEY) || 'eAQ12mv8MaVNfF4qjCm8fcaigOIYoNXd';
+export function getAuthToken(): string | null {
+  return localStorage.getItem(STORAGE_TOKEN_KEY);
 }
 
-export function setCustomApiKey(key: string): void {
-  localStorage.setItem(STORAGE_API_KEY, key.trim());
+export function isAuthenticated(): boolean {
+  return Boolean(localStorage.getItem(STORAGE_TOKEN_KEY) && localStorage.getItem(STORAGE_USER_KEY));
 }
 
 function getHeaders(): HeadersInit {
-  return {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'x-ra-user': getActiveUsername(),
-    'x-ra-key': getCustomApiKey(),
   };
+  const user = getActiveUsername();
+  if (user) headers['x-ra-user'] = user;
+  const token = getAuthToken();
+  if (token) headers['x-ra-token'] = token;
+  return headers;
 }
 
 export const api = {
@@ -44,6 +47,29 @@ export const api = {
   async getConfig() {
     const res = await fetch('/api/ra/config');
     return res.json();
+  },
+
+  // Authenticate using RetroAchievements username & password
+  async loginWithCredentials(username: string, password: string): Promise<{ success: boolean; user: string; token: string; profile?: UserProfile }> {
+    const res = await fetch('/api/ra/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Login failed. Please check your username and password.');
+    }
+    setActiveUsername(data.user);
+    if (data.token) {
+      localStorage.setItem(STORAGE_TOKEN_KEY, data.token);
+    }
+    return data;
+  },
+
+  logout(): void {
+    localStorage.removeItem(STORAGE_TOKEN_KEY);
+    localStorage.removeItem(STORAGE_USER_KEY);
   },
 
   // User Profile and Summary
